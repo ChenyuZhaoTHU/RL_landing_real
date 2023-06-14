@@ -32,10 +32,10 @@ class Rocket(object):
 
         self.task = task
         self.rocket_type = rocket_type
-        self.mass = 0.032                  # mass
+        self.mass = 0.09                  # mass
 
         self.g = 9.81
-        self.H = 0.1  # drone height (meters)
+        self.H = 0.09  # drone height (meters)
         self.I = 1/12*self.H*self.H  # Moment of inertia
         # self.dt = 1e-2
         self.delay = 0.2                # control delay, 0 if there is no delay
@@ -50,11 +50,11 @@ class Rocket(object):
 
 
         # Real states
-        init_z = 1.5
+        init_z = 15
         init_v=0
         self.init_z = init_z
         self.init_v = init_v
-        self.h_d = 0 + self.H/2 - 0.01
+        self.h_d = 0
 
         self.z = init_z                   # height
         self.v = init_v                   # velocity
@@ -66,8 +66,8 @@ class Rocket(object):
 
 
         # Noise
-        self.a_noise_sigma = 0.01
-        self.u_noise_sigma = 0.01
+        self.a_noise_sigma = 0.1
+        self.u_noise_sigma = 0
         self.a_noise = 0
         self.u_noise = 0
 
@@ -87,14 +87,6 @@ class Rocket(object):
         self.world_x_max = 300
         self.world_y_min = -30
         self.world_y_max = 570
-
-
-        self.R = 0.0226 #radius of rotor axes
-        self.d = 0.0643   #distance of adjencent rotor axes
-        self.b = 0.0643*1.414 #diagonal distance of rotor axes
-        self.Ib = 2
-
-
 
         # target point
         if self.task == 'hover':
@@ -165,7 +157,7 @@ class Rocket(object):
         return self.flatten(self.state)
 
     def create_action_table(self):
-        action_table = np.arange(0,1.5, 0.01)*self.mass*self.g
+        action_table = np.arange(0,1.2, 0.01)*self.mass*self.g
         return action_table
 
     def get_random_action(self):
@@ -219,12 +211,12 @@ class Rocket(object):
             vx, vy = state['vx'], state['vy']
             theta = state['theta']
             vtheta = state['vtheta']
-            v = (vy**2)**0.5
+            v = (vx**2 + vy**2)**0.5
 
             crash = False
             if y >= self.world_y_max - self.H / 2.0:
                 crash = True
-            if y <= 0 + self.H / 2.0 and v >= 0.2:
+            if y <= 0 + self.H / 2.0 and v >= 1.0:
                 crash = True
             # if y <= 0 + self.H / 2.0 and abs(x) >= self.target_r:
             #     crash = True
@@ -242,8 +234,8 @@ class Rocket(object):
             vx, vy = state['vx'], state['vy']
             theta = state['theta']
             vtheta = state['vtheta']
-            v = (vy**2)**0.5
-            return True if y <= 0 + self.H / 2.0 and v < 0.2 else False
+            v = (vx**2 + vy**2)**0.5
+            return True if y <= 0 + self.H / 2.0 and v < 1.0 else False
 
     # def calculate_reward(self, state):
 
@@ -258,9 +250,7 @@ class Rocket(object):
     #     dist_reward = 0.1*(1.0 - dist_norm)
 
     #     if abs(state['theta']) <= np.pi / 6.0:
-    #         pose_reward = 0.1if self.step_id >= 200:
-        #     self.already_crash = True
-        #     reward
+    #         pose_reward = 0.1
     #     else:
     #         pose_reward = abs(state['theta']) / (0.5*np.pi)
     #         pose_reward = 0.1 * (1.0 - pose_reward)
@@ -288,21 +278,19 @@ class Rocket(object):
         dist_y = abs(state['y'] - self.h_d)
         dist_norm = dist_y / (self.init_z - self.h_d)
         # velocity_norm = abs(state['vy'] - self.z_dot_d)
-        dist_reward = 50*(1.0-dist_norm)
+        dist_reward = 10*(1.0-dist_norm)
 
-        dist_reward -= 40*(abs(state['y'] - self.z_d))
+        dist_reward -= 2*(abs(state['y'] - self.z_d))
         
-        velocity_reward = -10*abs(state['vy'] - self.z_dot_d) + 20 * np.min([0, 0.6+state['vy']])
+        velocity_reward = -0.5*abs(state['vy'] - self.z_dot_d)
         pose_reward = 0
         reward = dist_reward + pose_reward + velocity_reward
         if self.task == 'landing' and self.already_crash:
-            reward = np.min([reward/2, reward*2]) - abs(state['vy']) * 100
+            reward = np.min([reward/2, reward*2])
         if self.task == 'landing' and self.already_landing:
             reward *= 2
         # self.z_e.append(abs(state['y'] - self.z_d))
-        if self.step_id >= 120:
-            self.already_crash = True
-            reward = np.min([reward/2, reward*2]) - np.max([0,reward/2,0]) * 3 - 5000*(abs(state['y'] - self.z_d))
+        
         return reward
 
 
@@ -312,21 +300,12 @@ class Rocket(object):
         x, y, vx, vy = self.state['x'], self.state['y'], self.state['vx'], self.state['vy']
         theta, vtheta = self.state['theta'], self.state['vtheta']
         phi = self.state['phi']
-        # GE force
-        if 0 < y < 0.:
-            Ti = 1-(self.R/(4*y)) - self.R**2*(y/((self.d**2+4*y**2)**3)**(1/2)) - ((self.R**2)/2)*(y/((2*self.d**2+4*y**2)**3)**(1/2)) - ((2*self.R)**2)*(y/((self.b**2+4*y**2)**3)**(1/2))*self.Ib
-            To = 1/Ti
-        elif y <= 0:
-            Ti = 1-(self.R/(4*0.005)) - self.R**2*(0.005/((self.d**2+4*0.005**2)**3)**(1/2)) - ((self.R**2)/2)*(0.005/((2*self.d**2+4*0.005**2)**3)**(1/2)) - ((2*self.R)**2)*(0.005/((self.b**2+4*0.005**2)**3)**(1/2))*self.Ib
 
-            To = 1/Ti
-        else:
-            To = 1
 
         self.baseline_controller()
-        self.noise
+
         f = self.action_table[action]
-        ay = (f+self.u_noise)/self.mass*To + self.a_noise - self.g
+        ay = f/self.mass - self.g
 
         # update agent
         if self.already_landing:
@@ -359,7 +338,6 @@ class Rocket(object):
 
         if self.already_crash or self.already_landing:
             done = True
-            print('!!!Stop!!!')
         else:
             done = False
 

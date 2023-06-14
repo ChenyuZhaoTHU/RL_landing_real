@@ -32,12 +32,12 @@ class Rocket(object):
 
         self.task = task
         self.rocket_type = rocket_type
-        self.mass = 0.032                  # mass
+        self.mass = 0.09                  # mass
 
         self.g = 9.81
-        self.H = 0.1  # drone height (meters)
+        self.H = 0.09  # drone height (meters)
         self.I = 1/12*self.H*self.H  # Moment of inertia
-        # self.dt = 1e-2
+        self.dt = 1e-2
         self.delay = 0.2                # control delay, 0 if there is no delay
         self.thrust_max = 2            # control constrain, 0 <= u <= 2mg
         
@@ -50,11 +50,11 @@ class Rocket(object):
 
 
         # Real states
-        init_z = 1.5
+        init_z = 15
         init_v=0
         self.init_z = init_z
         self.init_v = init_v
-        self.h_d = 0 + self.H/2 - 0.01
+        self.h_d = 0
 
         self.z = init_z                   # height
         self.v = init_v                   # velocity
@@ -66,33 +66,22 @@ class Rocket(object):
 
 
         # Noise
-        self.a_noise_sigma = 0.01
-        self.u_noise_sigma = 0.01
+        self.a_noise_sigma = 0.1
+        self.u_noise_sigma = 0
         self.a_noise = 0
         self.u_noise = 0
 
         # Step
+        self.step_size = 1e-1
         # self.total_step = 0 
         self.sim_duration = 10
         self.state_n = []
         self.z_e = []
 
-        self.task = task
-        self.rocket_type = rocket_type
-
-      
-        self.dt = 0.1
-
-        self.world_x_min = -300  # meters
-        self.world_x_max = 300
-        self.world_y_min = -30
-        self.world_y_max = 570
 
 
-        self.R = 0.0226 #radius of rotor axes
-        self.d = 0.0643   #distance of adjencent rotor axes
-        self.b = 0.0643*1.414 #diagonal distance of rotor axes
-        self.Ib = 2
+
+
 
 
 
@@ -115,7 +104,7 @@ class Rocket(object):
         self.state = self.create_random_state()
         self.action_table = self.create_action_table()
 
-        self.state_dims = 8
+        self.state_dims = 3
         self.action_dims = len(self.action_table)
 
         if path_to_bg_img is None:
@@ -125,10 +114,9 @@ class Rocket(object):
         self.state_buffer = []
 
 
-
     def noise(self):
         # Noise freq is 10
-        if not self.step_id % int(1 / self.dt * 0.1): 
+        if not self.step_id % int(1 / self.step_size * 0.1): 
             self.a_noise = np.random.normal(0, self.a_noise_sigma)
             if self.a_noise > 3 * self.a_noise_sigma:
                 self.a_noise = 3 * self.a_noise_sigma
@@ -144,11 +132,13 @@ class Rocket(object):
 
 
     def baseline_controller(self):
-        t = self.dt * self.step_id
+        t = self.step_size * self.step_id
         self.z_d = np.exp(-self.C*t) * (1+self.C*t) * (self.init_z-self.h_d) + self.h_d
         # print(self.z_d)
         self.z_dot_d = np.exp(-self.C*t) * (-self.C**2*t) * (self.init_z-self.h_d)
         self.z_ddot_d = np.exp(-self.C*t) * (self.C**3*t-self.C**2)
+
+       
 
 
     def reset(self, state_dict=None):
@@ -165,7 +155,9 @@ class Rocket(object):
         return self.flatten(self.state)
 
     def create_action_table(self):
-        action_table = np.arange(0,1.5, 0.01)*self.mass*self.g
+      
+        action_table = np.arange(0,2*self.mass*self.g, 0.01)
+        # action_table = [0, 1.0, 1.5]
         return action_table
 
     def get_random_action(self):
@@ -180,32 +172,30 @@ class Rocket(object):
         yc = (self.world_y_max + self.world_y_min) / 2.0
 
         if self.task == 'landing':
-            x = xc#random.uniform(xc - x_range / 4.0, xc + x_range / 4.0)
-            y = self.init_z
-            if x <= 0:
-                theta = -85 / 180 * np.pi
-            else:
-                theta = 85 / 180 * np.pi
-            vy = 0
+            # x = random.uniform(xc - x_range / 4.0, xc + x_range / 4.0)
+          
 
-        if self.task == 'hover':
-            x = xc
-            y = yc + 0.2 * y_range
-            theta = random.uniform(-45, 45) / 180 * np.pi
-            vy = -10
+            z = self.init_z
+           
+            v = self.init_v
+            
 
+        # state = {
+        #     'x': x, 'y': y, 'vx': 0, 'vy': vy,
+        #     'theta': theta, 'vtheta': 0,
+        #     'phi': 0, 'f': 0,
+        #     't': 0, 'a_': 0
+        # }
         state = {
-            'x': x, 'y': y, 'vx': 0, 'vy': vy,
-            'theta': 0, 'vtheta': 0,
-            'phi': 0, 'f': 0,
-            't': 0, 'a_': 0
+            'y': z, 'v': v,'f':0,'t':0, 'action': 0
         }
 
         return state
 
     def check_crash(self, state):
         if self.task == 'hover':
-            x, y = state['x'], state['y']
+            x, y =  state['y']
+            y = state['y'],
             theta = state['theta']
             crash = False
             if y <= self.H / 2.0:
@@ -215,141 +205,87 @@ class Rocket(object):
             return crash
 
         elif self.task == 'landing':
-            x, y = state['x'], state['y']
-            vx, vy = state['vx'], state['vy']
-            theta = state['theta']
-            vtheta = state['vtheta']
-            v = (vy**2)**0.5
+            y =  state['y']
+            v =  state['v']
+        
 
             crash = False
             if y >= self.world_y_max - self.H / 2.0:
                 crash = True
-            if y <= 0 + self.H / 2.0 and v >= 0.2:
+                print('crash to upper bound')
+            if y <= 0 + self.H / 2.0 and v >= 15.0:
                 crash = True
-            # if y <= 0 + self.H / 2.0 and abs(x) >= self.target_r:
-            #     crash = True
-            # if y <= 0 + self.H / 2.0 and abs(theta) >= 10/180*np.pi:
-            #     crash = True
-            # if y <= 0 + self.H / 2.0 and abs(vtheta) >= 10/180*np.pi:
-            #     crash = True
+                print('crash to ground to fast')
+    
             return crash
 
     def check_landing_success(self, state):
         if self.task == 'hover':
             return False
         elif self.task == 'landing':
-            x, y = state['x'], state['y']
-            vx, vy = state['vx'], state['vy']
-            theta = state['theta']
-            vtheta = state['vtheta']
-            v = (vy**2)**0.5
-            return True if y <= 0 + self.H / 2.0 and v < 0.2 else False
+            y = state['y']
+            v = state['v']
+            
+            # print(y <= 0 + self.H / 2.0 and v < 15.0)
+            return True if y <= 0 + self.H / 2.0 and v < 15.0 else False
 
-    # def calculate_reward(self, state):
-
-    #     x_range = self.world_x_max - self.world_x_min
-    #     y_range = self.world_y_max - self.world_y_min
-
-    #     # dist between agent and target point
-    #     dist_x = abs(state['x'] - self.target_x)
-    #     dist_y = abs(state['y'] - self.target_y)
-    #     dist_norm = dist_x / x_range + dist_y / y_range
-
-    #     dist_reward = 0.1*(1.0 - dist_norm)
-
-    #     if abs(state['theta']) <= np.pi / 6.0:
-    #         pose_reward = 0.1if self.step_id >= 200:
-        #     self.already_crash = True
-        #     reward
-    #     else:
-    #         pose_reward = abs(state['theta']) / (0.5*np.pi)
-    #         pose_reward = 0.1 * (1.0 - pose_reward)
-
-    #     reward = dist_reward + pose_reward
-
-    #     if self.task == 'hover' and (dist_x**2 + dist_y**2)**0.5 <= 2*self.target_r:  # hit target
-    #         reward = 0.25
-    #     if self.task == 'hover' and (dist_x**2 + dist_y**2)**0.5 <= 1*self.target_r:  # hit target
-    #         reward = 0.5
-    #     if self.task == 'hover' and abs(state['theta']) > 90 / 180 * np.pi:
-    #         reward = 0
-
-    #     v = (state['vx'] ** 2 + state['vy'] ** 2) ** 0.5
-    #     if self.task == 'landing' and self.already_crash:
-    #         reward = (reward + 5*np.exp(-1*v/10.)) * (self.max_steps - self.step_id)
-    #     if self.task == 'landing' and self.already_landing:
-    #         reward = (1.0 + 5*np.exp(-1*v/10.))*(self.max_steps - self.step_id)
-
-    #     return reward
-
-    
     def calculate_reward(self, state):
 
-        dist_y = abs(state['y'] - self.h_d)
-        dist_norm = dist_y / (self.init_z - self.h_d)
-        # velocity_norm = abs(state['vy'] - self.z_dot_d)
-        dist_reward = 50*(1.0-dist_norm)
-
-        dist_reward -= 40*(abs(state['y'] - self.z_d))
         
-        velocity_reward = -10*abs(state['vy'] - self.z_dot_d) + 20 * np.min([0, 0.6+state['vy']])
+        dist_norm = abs(state['y'] - self.z_d)
+        velocity_norm = abs(state['v'] - self.z_dot_d)
+
+        dist_reward = 100*(1.0-dist_norm)
+        
         pose_reward = 0
-        reward = dist_reward + pose_reward + velocity_reward
-        if self.task == 'landing' and self.already_crash:
-            reward = np.min([reward/2, reward*2]) - abs(state['vy']) * 100
-        if self.task == 'landing' and self.already_landing:
-            reward *= 2
-        # self.z_e.append(abs(state['y'] - self.z_d))
-        if self.step_id >= 120:
-            self.already_crash = True
-            reward = np.min([reward/2, reward*2]) - np.max([0,reward/2,0]) * 3 - 5000*(abs(state['y'] - self.z_d))
+        reward = dist_reward + pose_reward # - velocity_norm
+        self.z_e.append(abs(state['y'] - self.z_d))
+        reward = -dist_norm
         return reward
 
-
     def step(self, action):
-        self.step_id += 1
 
-        x, y, vx, vy = self.state['x'], self.state['y'], self.state['vx'], self.state['vy']
-        theta, vtheta = self.state['theta'], self.state['vtheta']
-        phi = self.state['phi']
-        # GE force
-        if 0 < y < 0.:
-            Ti = 1-(self.R/(4*y)) - self.R**2*(y/((self.d**2+4*y**2)**3)**(1/2)) - ((self.R**2)/2)*(y/((2*self.d**2+4*y**2)**3)**(1/2)) - ((2*self.R)**2)*(y/((self.b**2+4*y**2)**3)**(1/2))*self.Ib
-            To = 1/Ti
-        elif y <= 0:
-            Ti = 1-(self.R/(4*0.005)) - self.R**2*(0.005/((self.d**2+4*0.005**2)**3)**(1/2)) - ((self.R**2)/2)*(0.005/((2*self.d**2+4*0.005**2)**3)**(1/2)) - ((2*self.R)**2)*(0.005/((self.b**2+4*0.005**2)**3)**(1/2))*self.Ib
+        self.y, self.v = self.state['y'], self.state['v']
+        self.noise()
+        # self.baseline_controller()
+        u= self.action_table[action]
 
-            To = 1/Ti
-        else:
-            To = 1
-
-        self.baseline_controller()
-        self.noise
-        f = self.action_table[action]
-        ay = (f+self.u_noise)/self.mass*To + self.a_noise - self.g
-
+        import time
+        time.sleep(0.01)
+        self.state_n.append(u)
+        # u = u + self.u_noise
+        self.u = u
+        
         # update agent
         if self.already_landing:
-            vx, vy, ax, ay, theta, vtheta, atheta = 0, 0, 0, 0, 0, 0, 0
-            x_new, y_new, vx_new, vy_new, theta_new, vtheta_new = 0, 0, 0, 0, 0, 0
-            phi, f = 0, 0
+            self.y, self.v = 0, 0
             action = 0
+            
+        self.baseline_controller()
 
-        else:
-            x_new = x
-            # x_new = x + vx*self.dt + 0.5 * ax * (self.dt**2)
-            y_new = y + vy*self.dt + 0.5 * ay * (self.dt**2)
-            vx_new, vy_new = 0, vy + ay * self.dt
-            theta_new = 0
-            vtheta_new = 0
-            phi = 0
+        T = (1-self.z/(self.init_z-self.h_d))*self.u  ## add wind force here
+        self.a = self.u/self.mass - self.g + self.a_noise + T/self.mass # change accelation here
+        self.Fa_T = T
+        # print(self.a)
+        self.z = self.z + self.step_size * self.v
+        self.v = self.v + self.step_size * self.a
+                
+        self.Fa = self.mass * (self.a + self.g) - self.u
 
+        self.step_id += 1
+
+
+
+        import time
+        time.sleep(0.1)
+        self.state_n.append(self.z)
         
+
+
         self.state = {
-            'x': x_new, 'y': y_new, 'vx': vx_new, 'vy': vy_new,
-            'theta': theta_new, 'vtheta': vtheta_new,
-            'phi': phi, 'f': f,
-            't': self.step_id, 'action_': action
+            'y': self.z, 'v': self.v,
+            'f': u,
+            't': self.step_id, 'action': action
         }
         self.state_buffer.append(self.state)
 
@@ -357,18 +293,19 @@ class Rocket(object):
         self.already_crash = self.check_crash(self.state)
         reward = self.calculate_reward(self.state)
 
-        if self.already_crash or self.already_landing:
+        if self.already_crash:
             done = True
-            print('!!!Stop!!!')
+            # print('crash!!!!!!!!!!!!!!!!!!!!!!!!!')
+        elif self.already_landing:
+            done = True
+            # print('land!!!!!!!!!!!!!!!!!!!!!!!!!')
         else:
             done = False
 
         return self.flatten(self.state), reward, done, None
 
     def flatten(self, state):
-        x = [state['x'], state['y'], state['vx'], state['vy'],
-             state['theta'], state['vtheta'], state['t'],
-             state['phi']]
+        x = [ state['y'], state['v'], state['t']]
         return np.array(x, dtype=np.float32)/100.
 
     def render(self, window_name='env', wait_time=1,
@@ -505,7 +442,7 @@ class Rocket(object):
                                       'from (falcon, starship)' % self.rocket_type)
 
         # engine work
-        f, phi = self.state['f'], self.state['phi']
+        f, phi = self.state['f'], 0#self.state['phi']
         c, s = np.cos(phi), np.sin(phi)
 
         if f > 0 and f < 0.5 * self.g:
@@ -545,7 +482,7 @@ class Rocket(object):
 
         # apply transformation
         for poly in polys['rocket'] + polys['engine_work']:
-            M = utils.create_pose_matrix(tx=self.state['x'], ty=self.state['y'], rz=self.state['theta'])
+            M = utils.create_pose_matrix(tx=0, ty=self.state['y'], rz=0)#self.state['theta'])
             pts = np.array(poly['pts'])
             pts = np.concatenate([pts, np.ones_like(pts)], axis=-1)  # attach z=1, w=1
             pts = np.matmul(M, pts.T).T
@@ -599,18 +536,18 @@ class Rocket(object):
 
         pt = (10, 60)
         text = "x: %.2f m, y: %.2f m" % \
-               (self.state['x'], self.state['y'])
+               (0, self.state['y'])
         put_text(canvas, text, pt)
 
-        pt = (10, 80)
-        text = "vx: %.2f m/s, vy: %.2f m/s" % \
-               (self.state['vx'], self.state['vy'])
-        put_text(canvas, text, pt)
+        # pt = (10, 80)
+        # text = "vx: %.2f m/s, vy: %.2f m/s" % \
+        #        (self.state['vx'], self.state['vy'])
+        # put_text(canvas, text, pt)
 
-        pt = (10, 100)
-        text = "a: %.2f degree, va: %.2f degree/s" % \
-               (self.state['theta'] * 180 / np.pi, self.state['vtheta'] * 180 / np.pi)
-        put_text(canvas, text, pt)
+        # pt = (10, 100)
+        # text = "a: %.2f degree, va: %.2f degree/s" % \
+        #        (self.state['theta'] * 180 / np.pi, self.state['vtheta'] * 180 / np.pi)
+        # put_text(canvas, text, pt)
 
 
     def draw_trajectory(self, canvas, color=(255, 0, 0)):
@@ -643,7 +580,7 @@ class Rocket(object):
         # draw traj
         pts = []
         for state in self.state_buffer:
-            pts.append([state['x'], state['y']])
+            pts.append([0, state['y']])
         pts_px = self.wd2pxl(pts)
 
         dn = 5
@@ -661,7 +598,7 @@ class Rocket(object):
 
 
     def crop_alongwith_camera(self, vis, crop_scale=0.4):
-        x, y = self.state['x'], self.state['y']
+        x, y = 0, self.state['y']
         xp, yp = self.wd2pxl([[x, y]])[0]
         crop_w_half, crop_h_half = int(self.viewport_w*crop_scale), int(self.viewport_h*crop_scale)
         # check boundary

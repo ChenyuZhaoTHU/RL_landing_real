@@ -111,7 +111,7 @@ class Rocket(object):
         yc = (self.world_y_max + self.world_y_min) / 2.0
 
         if self.task == 'landing':
-            x = random.uniform(xc - x_range / 4.0, xc + x_range / 4.0)
+            x = xc
             y = yc + 0.4*y_range
             if x <= 0:
                 theta = -85 / 180 * np.pi

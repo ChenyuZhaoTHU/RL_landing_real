@@ -15,7 +15,7 @@ if __name__ == '__main__':
     task = 'landing'  # 'hover' or 'landing'
 
     max_m_episode = 800000
-    max_steps = 800
+    max_steps = 300
 
     env = Rocket(task=task, max_steps=max_steps)
     ckpt_folder = os.path.join('./', task + '_ckpt')
@@ -26,15 +26,17 @@ if __name__ == '__main__':
     REWARDS = []
 
     net = ActorCritic(input_dim=env.state_dims, output_dim=env.action_dims).to(device)
-    if len(glob.glob(os.path.join(ckpt_folder, '*.pt'))) > 0:
-        # load the last ckpt
-        checkpoint = torch.load(glob.glob(os.path.join(ckpt_folder, '*.pt'))[-1])
-        net.load_state_dict(checkpoint['model_G_state_dict'])
-        last_episode_id = checkpoint['episode_id']
-        REWARDS = checkpoint['REWARDS']
-
+    # if len(glob.glob(os.path.join(ckpt_folder, '*.pt'))) > 0:
+    #     # load the last ckpt
+    #     checkpoint = torch.load(glob.glob(os.path.join(ckpt_folder, '*.pt'))[-1])
+    #     net.load_state_dict(checkpoint['model_G_state_dct'])
+    #     last_episode_id = checkpoint['episode_id']
+    #     REWARDS = checkpoint['REWARDS']
+    
     for episode_id in range(last_episode_id, max_m_episode):
-
+        t=[]
+        z=[]
+        z_d=[]
         # training loop
         state = env.reset()
         rewards, log_probs, values, masks = [], [], [], []
@@ -45,9 +47,15 @@ if __name__ == '__main__':
             log_probs.append(log_prob)
             values.append(value)
             masks.append(1-done)
+
+
+            t.append(step_id)
+            z.append(state[1]*100)
+            z_d.append(env.z_d)
             if episode_id % 100 == 1:
                 env.render()
-
+                np.savetxt('data/'+str(episode_id)+'z.txt', z)
+                np.savetxt('data/'+str(episode_id)+'z_d.txt', z_d)
             if done or step_id == max_steps-1:
                 _, _, Qval = net.get_action(state)
                 net.update_ac(net, rewards, log_probs, values, masks, Qval, gamma=0.999)
@@ -58,6 +66,8 @@ if __name__ == '__main__':
               % (episode_id, np.sum(rewards)))
 
         if episode_id % 100 == 1:
+            np.savetxt('data/0_reward.txt',REWARDS)
+            np.savetxt('data/0_avg_reward.txt',utils.moving_avg(REWARDS, N=50))
             plt.figure()
             plt.plot(REWARDS), plt.plot(utils.moving_avg(REWARDS, N=50))
             plt.legend(['episode reward', 'moving avg'], loc=2)
